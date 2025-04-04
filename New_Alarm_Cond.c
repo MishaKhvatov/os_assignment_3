@@ -739,7 +739,7 @@ void *change_alarm_thread(void *arg) {
                 errno_abort("Failed to wait on change_alarm_cond");
             }
         }
-        
+        writer_lock();
         /* The alarm(s) in change_alarm_list will be processed */
         change_alarm = change_alarm_list;
         while (change_alarm != NULL) {
@@ -760,6 +760,8 @@ void *change_alarm_thread(void *arg) {
                     alarm->group_id = change_alarm->group_id;
                 }
 
+                
+
                 console_print("Change Alarm Thread %ld Has Changed Alarm(%d at %ld: Group(%d) <%ld %d %ld %s>",
                 (long)pthread_self(), alarm->alarm_id, (long)time(NULL), 
                 alarm->group_id, alarm->time_stamp, alarm->interval, 
@@ -776,6 +778,8 @@ void *change_alarm_thread(void *arg) {
 
             change_alarm = link;
         }
+
+        writer_unlock();
         
         status = pthread_mutex_unlock(&alarm_mutex);
         if (status != 0) {
@@ -819,7 +823,7 @@ void* view_alarms_thread(void* arg) {
                          (long)current_alarm->time,
                          current_alarm->message,
                          current_alarm->status,
-                         (long)current_alarm->assigned_display_thread);
+                         (long)pthread_self());
         }
         current_alarm = current_alarm->link;
     }
