@@ -118,6 +118,30 @@ int is_next_group_to_display(int group_id) {
     int next_idx = (last_displayed_idx + 1) % count;
     return (group_id == group_ids[next_idx]);
 }
+/**
+ * @brief Helper function to return alarm type in a string format
+ *
+ * @param in type of alarm request
+ * @return alarm type in a string
+ */
+const char* alarm_type_to_string(int type) {
+    switch (type) {
+        case REQ_START_ALARM:
+            return "Start_Alarm";
+        case REQ_CHANGE_ALARM:
+            return "Change_Alarm";
+        case REQ_CANCEL_ALARM:
+            return "Cancel_Alarm";
+        case REQ_SUSPEND_ALARM:
+            return "Suspend_Alarm";
+        case REQ_REACTIVATE_ALARM:
+            return "Reactivate_Alarm";
+        case REQ_VIEW_ALARMS:
+            return "View_Alarms";
+        default:
+            return "Unknown";
+    }
+}
 
 
 /**
@@ -665,8 +689,48 @@ void *remove_alarm_thread(void *arg) {
     return NULL;
 }
 
-void *view_alarms_thread(void *arg) {
-    /* Implementation to be added */
+void* view_alarms_thread(void* arg) {
+    time_t view_time = time(NULL);
+    alarm_t *current_alarm;
+
+    // Locking to safely access shared alarm list
+    reader_lock();
+
+    // Print the header for view alarms
+    console_print("View Alarms at View Time %ld:", (long)view_time);
+
+    current_alarm = alarm_list;
+    while (current_alarm != NULL) {
+        // Ensure only alarms that were inserted before the current View Alarms request are displayed
+        if (current_alarm->time_stamp < view_time) {
+            console_print("Alarm(%d): Type %s Group(%d) %ld %d %ld %s Status %d Assigned Display Thread %ld",
+                         current_alarm->alarm_id,
+                         alarm_type_to_string(current_alarm->type),
+                         current_alarm->group_id,
+                         (long)current_alarm->time_stamp,
+                         current_alarm->interval,
+                         (long)current_alarm->time,
+                         current_alarm->message,
+                         current_alarm->status,
+                         (long)current_alarm->assigned_display_thread);
+        }
+        current_alarm = current_alarm->link;
+    }
+
+    // Remove the current View_Alarms request from the alarm list
+    alarm_t* view_alarm_request = find_alarm_by_id(current_alarm->alarm_id);
+    if (view_alarm_request) {
+        remove_alarm_from_list(&alarm_list, view_alarm_request);
+        console_print("View Alarms request %d removed from the alarm list", view_alarm_request->alarm_id);
+    }
+
+    // Unlock the alarm list after the view operation is complete
+    reader_unlock();
+
+    // Print that View Alarms has finished processing
+    console_print("View Alarms request %d processed and removed from the alarm list", current_alarm->alarm_id);
+
     return NULL;
 }
+
 
