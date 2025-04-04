@@ -39,6 +39,9 @@ int most_recent_displayed_alarm_id = -1;
 
 circular_buffer_t alarm_buffer;
 
+/* Helper functions for alarm list operations */
+alarm_t *find_most_recent_alarm_by_type(alarm_t *list, alarm_req_type_t type);
+alarm_t *find_alarm_by_type(alarm_t *list, alarm_req_type_t type);
 
 void reader_lock() {
     sem_wait(&read_count_mutex);
@@ -605,7 +608,111 @@ int main(int argc, char *argv[]) {
 /* Placeholder functions for other threads - to be implemented later */
 
 void *start_alarm_thread(void *arg) {
-    /* Implementation to be added */
+    alarm_t *alarm;
+    display_thread_t *dt, *target_dt;
+    int found, count;
+    time_t current_time;
+    
+    while (1) {
+        /* Wait for a start alarm request */
+        pthread_mutex_lock(&alarm_mutex);
+        while (find_alarm_by_type(alarm_list, REQ_START_ALARM) == NULL) {
+            pthread_cond_wait(&start_alarm_cond, &alarm_mutex);
+        }
+        pthread_mutex_unlock(&alarm_mutex);
+        
+        /* Find the most recent start alarm request */
+        writer_lock();
+        alarm = find_most_recent_alarm_by_type(alarm_list, REQ_START_ALARM);
+        if (alarm == NULL) {
+            writer_unlock();
+            continue;
+        }
+        
+        /* Check if we need to create a new display thread or assign to existing one */
+        found = 0;
+        target_dt = NULL;
+        count = 0;
+        
+        /* Search for existing display threads for this group */
+        pthread_mutex_lock(&display_mutex);
+        dt = display_threads;
+        while (dt != NULL) {
+            if (dt->group_id == alarm->group_id) {
+                count++;
+                /* Check if this thread has less than 2 alarms assigned */
+                if (dt->alarm_count < 2) {
+                    target_dt = dt;
+                    found = 1;
+                    break;
+                }
+            }
+            dt = dt->next;
+        }
+        pthread_mutex_unlock(&display_mutex);
+        
+        current_time = time(NULL);
+        
+        if (!found || count == 0) {
+            /* Case 1: No existing display thread or all have 2 alarms - create new one */
+            dt = create_display_thread(alarm->group_id, alarm);
+            if (dt != NULL) {
+                console_print("Start Alarm Thread Created New Display Alarm Thread %ld For Alarm(%d) at %ld: Group(%d) %ld %d %ld %s",
+                             (long)dt->thread_id, alarm->alarm_id, (long)current_time,
+                             alarm->group_id, (long)alarm->time_stamp, alarm->interval,
+                             (long)alarm->time, alarm->message);
+            }
+        } else {
+            /* Case 2: Assign to existing display thread with < 2 alarms */
+            pthread_mutex_lock(&target_dt->mutex);
+            if (target_dt->alarm_1 == NULL) {
+                target_dt->alarm_1 = alarm;
+            } else {
+                target_dt->alarm_2 = alarm;
+            }
+            target_dt->alarm_count++;
+            pthread_mutex_unlock(&target_dt->mutex);
+            
+            console_print("Alarm(%d) Assigned to Display Thread(%ld) at %ld: Group(%d) %ld %d %ld %s",
+                          alarm->alarm_id, (long)target_dt->thread_id, (long)current_time,
+                          alarm->group_id, (long)alarm->time_stamp, alarm->interval,
+                          (long)alarm->time, alarm->message);
+        }
+        
+        writer_unlock();
+    }
+    
+    return NULL;
+}
+
+/* Helper function to find the most recent alarm of a given type */
+alarm_t *find_most_recent_alarm_by_type(alarm_t *list, alarm_req_type_t type) {
+    alarm_t *current = list;
+    alarm_t *most_recent = NULL;
+    
+    while (current != NULL) {
+        if (current->type == type) {
+            if (most_recent == NULL || current->time_stamp > most_recent->time_stamp) {
+                most_recent = current;
+            }
+        }
+        current = current->link;
+    }
+    
+    return most_recent;
+}
+
+/* Helper function to find any alarm of a given type */
+alarm_t *find_alarm_by_type(alarm_t *list, alarm_req_type_t type) {
+    alarm_t *current = list;
+    
+    while (current != NULL) {
+        if (current->type == type) {
+            return current;
+        }
+        current = current->link;
+    }
+    
     return NULL;
 }
 
