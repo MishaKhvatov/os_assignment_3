@@ -832,3 +832,4 @@ void* view_alarms_thread(void* arg) {
 
     return NULL;
 }
+//.
