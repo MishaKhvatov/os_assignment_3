@@ -585,8 +585,73 @@ void *start_alarm_thread(void *arg) {
     return NULL;
 }
 
+/**
+ * @brief Change alarm thread function stub
+ *
+ * @param arg Thread argument (not used)
+ * @return void* Always 0
+ */
 void *change_alarm_thread(void *arg) {
-    /* Implementation to be added */
+    alarm_t *change_alarm;
+    int status;
+
+    while (1) {
+        /* Wait for the condition signal before proceeding */
+        status = pthread_mutex_lock(&alarm_mutex);
+        if (status != 0) {
+            errno_abort("Failed to lock alarm mutex");
+        }
+        while (change_alarm_list == NULL) {
+            status = pthread_cond_wait(&change_alarm_cond, &alarm_mutex);
+            if (status != 0) {
+                pthread_mutex_unlock(&alarm_mutex);
+                errno_abort("Failed to wait on change_alarm_cond");
+            }
+        }
+        
+        /* The alarm(s) in change_alarm_list will be processed */
+        change_alarm = change_alarm_list;
+        while (change_alarm != NULL) {
+            alarm_t *alarm = find_alarm_by_id(alarm_list, change_alarm->alarm_id);
+            if (alarm == NULL) {
+                /* Handle invalid change request */
+                console_print("Invalid Change Alarm Request(%d at %ld: Group(%d) %ld %ld %s",
+                change_alarm->alarm_id, (long)time(NULL), 
+                change_alarm->group_id, change_alarm->time_stamp, 
+                change_alarm->time, change_alarm->message);
+            } else {
+                /* Make required changes to alarm */
+                alarm->time = change_alarm->time;
+                alarm->expiry = change_alarm->expiry;
+                strncpy(alarm->message, change_alarm->message, MAX_MESSAGE_LEN);
+                if (alarm->group_id != change_alarm->group_id) {
+                    alarm->status = ALARM_MOVED;
+                    alarm->group_id = change_alarm->group_id;
+                }
+
+                console_print("Change Alarm Thread %ld Has Changed Alarm(%d at %ld: Group(%d) <%ld %d %ld %s>",
+                (long)pthread_self(), alarm->alarm_id, (long)time(NULL), 
+                alarm->group_id, alarm->time_stamp, alarm->interval, 
+                alarm->time, alarm->message);
+            }
+
+            /* Delete change_alarm from the change_alarm_list */
+            alarm_t *link = change_alarm->link;
+            if (change_alarm->prev == NULL) {
+                change_alarm_list = change_alarm->link;
+            } else {
+                change_alarm->prev->link = change_alarm->link;
+            }
+
+            change_alarm = link;
+        }
+        
+        status = pthread_mutex_unlock(&alarm_mutex);
+        if (status != 0) {
+            errno_abort("Failed to unlock alarm mutex");
+        }
+
+    }
     return NULL;
 }
 
