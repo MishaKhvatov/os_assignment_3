@@ -717,20 +717,11 @@ void* view_alarms_thread(void* arg) {
         current_alarm = current_alarm->link;
     }
 
-    // Remove the current View_Alarms request from the alarm list
-    alarm_t* view_alarm_request = find_alarm_by_id(current_alarm->alarm_id);
-    if (view_alarm_request) {
-        remove_alarm_from_list(&alarm_list, view_alarm_request);
-        console_print("View Alarms request %d removed from the alarm list", view_alarm_request->alarm_id);
-    }
-
     // Unlock the alarm list after the view operation is complete
     reader_unlock();
 
     // Print that View Alarms has finished processing
-    console_print("View Alarms request %d processed and removed from the alarm list", current_alarm->alarm_id);
+    console_print("View Alarms request processed and alarms listed.");
 
     return NULL;
 }
-
-
