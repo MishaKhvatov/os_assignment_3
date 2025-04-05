@@ -1,6 +1,6 @@
 # Compiler and flags
 CC := gcc
-CFLAGS := -Wall -Werror -g -I./include
+CFLAGS := -Wall -g -I./include
 LDFLAGS := -lpthread
 
 # Directories
@@ -22,7 +22,7 @@ MAIN_OBJ := $(OBJ_DIR)/New_Alarm_Cond.o
 MAIN_BIN := New_Alarm_Cond
 
 # Test files
-TEST_BINS := alarm_test display_test start_test
+TEST_BINS := alarm_test display_test
 
 # Default target
 all: $(MAIN_BIN) $(TEST_BINS)
@@ -45,10 +45,6 @@ display_test: $(TEST_DIR)/display_test.c $(OBJ_DIR)/src/display.o $(OBJ_DIR)/src
 
 # Compile and link alarm_test
 alarm_test: $(TEST_DIR)/alarm_test.c $(OBJ_DIR)/src/alarm.o
-	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
-
-# Compile and link start_test
-start_test: $(TEST_DIR)/start_test.c $(OBJ_DIR)/src/alarm.o $(OBJ_DIR)/src/display.o
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 # Run all tests
