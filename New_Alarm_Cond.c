@@ -746,6 +746,9 @@ void *change_alarm_thread(void *arg) {
         change_alarm = change_alarm_list;
         while (change_alarm != NULL) {
             alarm_t *alarm = find_alarm_by_id(alarm_list, change_alarm->alarm_id);
+            if (alarm_list == NULL) {
+                console_print("NO ALARMS");
+            }
             if (alarm == NULL) {
                 /* Handle invalid change request */
                 console_print("Invalid Change Alarm Request(%d at %ld: Group(%d) %ld %ld %s",
@@ -759,6 +762,7 @@ void *change_alarm_thread(void *arg) {
                 strncpy(alarm->message, change_alarm->message, MAX_MESSAGE_LEN);
                 if (alarm->group_id != change_alarm->group_id) {
                     alarm->status = ALARM_MOVED;
+                
                     alarm->group_id = change_alarm->group_id;
                 }
 
@@ -796,7 +800,87 @@ void *change_alarm_thread(void *arg) {
 }
 
 void *suspend_reactivate_alarm_thread(void *arg) {
-    /* Implementation to be added */
+    time_t curr_time;
+    alarm_t *curr;
+    alarm_t *next;
+    alarm_t *req = NULL;
+    alarm_t *mod_alarm = NULL;
+
+    /** Lock in this process for safety **/
+    pthread_mutex_lock(&alarm_mutex);
+    while (1) {        
+        /** Determine whether there are any requests for suspension or reactivation**/
+        int received = 0;
+        curr = alarm_list;
+        while (curr) {
+            if (curr->type == REQ_SUSPEND_ALARM || curr->type == REQ_REACTIVATE_ALARM) {
+                received = 1;
+                break;
+            }
+            curr = curr->link;
+        }
+        /** If we don't have anything to receive, we just wait **/
+        if (!received) {
+            pthread_cond_wait(&suspend_reactivate_cond, &alarm_mutex);
+        } else {
+            break;
+        }
+        /** Unlock here now **/
+        pthread_mutex_unlock(&alarm_mutex);
+
+        writer_lock();
+        curr_time = time(NULL);
+
+        /** Obtain a reactivation or suspension request htat is the most recent one**/
+        req = NULL;
+        curr = alarm_list;
+        while (curr) {
+            if ((curr->type == REQ_SUSPEND_ALARM || curr->type == REQ_REACTIVATE_ALARM) && (!req || curr->time_stamp > req->time_stamp)) {
+                req = curr;
+            }
+            curr = curr->link;
+        }
+
+        /** If we have a request, then we can proceed with proessing it **/
+        if (req) {
+            /** We need the REQ_START_ALARM and the earlier timestamp**/
+            mod_alarm = NULL;
+            curr = alarm_list;
+            while (curr) {
+                /** Here, we check if the type is actually REQ_START_ALARM and the timestamp **/
+                if (curr->type == REQ_START_ALARM && (curr->alarm_id == req->alarm_id) && (curr->time_stamp < req->time_stamp)) {
+                    if (!mod_alarm || curr->time_stamp > mod_alarm->time_stamp) {
+                        mod_alarm = curr;
+                    }
+                }
+                curr = curr->link;
+            }
+            if (mod_alarm) {
+                /** Situation 1: Suspension**/
+                if (req->type == REQ_SUSPEND_ALARM && mod_alarm && mod_alarm->status == ALARM_ACTIVE) {
+                    mod_alarm->status = ALARM_SUSPENDED;
+                    console_print("Alarm(%d) Suspended at %ld: Group(%d) %ld %ld %s", mod_alarm->alarm_id, (long)curr_time, mod_alarm->group_id, (long)mod_alarm->time_stamp, (long)mod_alarm->time, mod_alarm->message);
+                } 
+                /** Situation 2: Reactivation**/
+                else if (req->type == REQ_REACTIVATE_ALARM && mod_alarm && mod_alarm->status == ALARM_SUSPENDED) {
+                    mod_alarm->status = ALARM_ACTIVE;
+                    console_print("Alarm(%d) Reactivated at %ld: Group(%d) %ld %ld %s", mod_alarm->alarm_id, (long)curr_time, mod_alarm->group_id, (long)mod_alarm->time_stamp, (long)mod_alarm->time, mod_alarm->message);
+                }
+                
+                /** Remove requests here **/
+                if (req->prev) {
+                    req->prev->link = req->link;
+                } else {
+                    alarm_list = req->link;
+                }
+
+                if (req->link)
+                    req->link->prev = req->prev;
+                free(req);
+            }
+        }   
+        writer_unlock(); 
+    }
     return NULL;
 }
 
