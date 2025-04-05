@@ -626,37 +626,27 @@ void *start_alarm_thread(void *arg) {
             pthread_mutex_unlock(&alarm_mutex);
             continue;
         }
-        
-        /* Remove the alarm from the list since we're processing it */
-        if (alarm->prev == NULL) {
-            alarm_list = alarm->link;
-        } else {
-            alarm->prev->link = alarm->link;
-        }
-        if (alarm->link != NULL) {
-            alarm->link->prev = alarm->prev;
-        }
+
+        /* Critical fix - set status and keep alarm in main list */
+        alarm->status = ALARM_ACTIVE;
         pthread_mutex_unlock(&alarm_mutex);
         
-        /* Check if we need to create a new display thread or assign to existing one */
+        /* Assign to display thread */
         found = 0;
         target_dt = NULL;
         count = 0;
         
-        /* Search for existing display threads for this group */
         pthread_mutex_lock(&display_mutex);
         dt = display_threads;
         while (dt != NULL) {
             if (dt->group_id == alarm->group_id) {
                 count++;
-                /* Check if this thread has less than 2 alarms assigned */
                 pthread_mutex_lock(&dt->mutex);
                 if (dt->alarm_count < 2) {
                     target_dt = dt;
                     found = 1;
                 }
                 pthread_mutex_unlock(&dt->mutex);
-                
                 if (found) break;
             }
             dt = dt->next;
@@ -665,7 +655,6 @@ void *start_alarm_thread(void *arg) {
         current_time = time(NULL);
         
         if (!found || count == 0) {
-            /* Case 1: No existing display thread or all have 2 alarms - create new one */
             dt = create_display_thread(alarm->group_id, alarm);
             if (dt != NULL) {
                 console_print("Start Alarm Thread Created New Display Alarm Thread %ld For Alarm(%d) at %ld: Group(%d) %ld %d %ld %s",
@@ -674,7 +663,6 @@ void *start_alarm_thread(void *arg) {
                              (long)alarm->time, alarm->message);
             }
         } else {
-            /* Case 2: Assign to existing display thread with < 2 alarms */
             pthread_mutex_lock(&target_dt->mutex);
             if (target_dt->alarm_1 == NULL) {
                 target_dt->alarm_1 = alarm;
@@ -691,7 +679,6 @@ void *start_alarm_thread(void *arg) {
         }
         pthread_mutex_unlock(&display_mutex);
     }
-    
     return NULL;
 }
 
