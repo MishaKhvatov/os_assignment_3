@@ -37,8 +37,7 @@ void print_alarm_list(alarm_t *list, const char *list_name) {
     printf("\n");
 }
 
-alarm_t *create_test_alarm(int alarm_id, int group_id, alarm_req_type_t type, 
-                           alarm_status_t status, const char *message) {
+alarm_t *create_test_alarm(int alarm_id, int group_id, alarm_req_type_t type, alarm_status_t status, const char *message) {
     alarm_t *alarm = malloc(sizeof(alarm_t));
     if (alarm == NULL) {
         fprintf(stderr, "Failed to allocate memory for test alarm\n");
