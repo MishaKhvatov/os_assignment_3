@@ -782,7 +782,7 @@ void *change_alarm_thread(void *arg) {
             if (link) {
                 link->prev = change_alarm->prev;
             }
-
+            free(change_alarm);
             change_alarm = link;
         }
         free(change_alarm);
@@ -891,7 +891,135 @@ void *suspend_reactivate_alarm_thread(void *arg) {
 }
 
 void *remove_alarm_thread(void *arg) {
-    /* Implementation to be added */
+    /** Setups for the alarms and time **/
+    time_t curr_time;
+    alarm_t *curr;
+    alarm_t *next;
+    alarm_t *req = NULL;
+    alarm_t *mod_alarm = NULL;
+
+    /** For determining and tracking existence of cancellation and expirations requests **/
+    int receive_cancellation;
+    int receive_expiration;
+    while (1) {
+        /** Lock for safety **/
+        pthread_mutex_lock(&alarm_mutex);
+        /** Here, we have another while(1) loop, and the purpose of this is to run a control flow for obtaining requests. It is different from the parent while(1)
+          * becuase the top one is for processing**/
+        while (1) {
+            /** Currently, we have nothing so we set these as zero**/
+            receive_cancellation = 0;
+            receive_expiration = 0;
+            curr = alarm_list;
+            while (curr) {
+                /** If we do currently get some request, we check the type **/
+                if (curr->type == REQ_CANCEL_ALARM) {
+                    receive_cancellation = 1;
+                    break;
+                }
+                /** For the expiration, the expiry and time needs to be checked as well **/
+                if (curr->type == REQ_START_ALARM && curr->expiry <= time(NULL)) {
+                    receive_expiration = 1;
+                    break;
+                }
+                curr = curr->link;
+            }
+            /** If we have either, we can exit out of here and proceed with the outer loop, otherwise we just wait until we get something **/
+            if (receive_cancellation || receive_expiration)
+                break;
+            pthread_cond_wait(&remove_alarm_cond, &alarm_mutex);
+        }
+        /** Done here, so now can unlock **/
+        pthread_mutex_unlock(&alarm_mutex);
+
+        /* This is the writer lock for modifying the list */
+        writer_lock();
+        curr_time = time(NULL);
+
+        /** Cancellations are processed here first **/
+        req = NULL;
+        curr = alarm_list;
+        while (curr) {
+            if (curr->type == REQ_CANCEL_ALARM && (!req || curr->time_stamp > req->time_stamp))
+                req = curr;
+            curr = curr->link;
+        }
+        /** If we have the request **/
+        if (req) {
+            /** We get the alarm with the timestamp that matches **/
+            mod_alarm = NULL;
+            curr = alarm_list;
+            while (curr) {
+                if (curr->type == REQ_START_ALARM && (curr->alarm_id == req->alarm_id) && (curr->time_stamp < req->time_stamp)) {
+                    if (!mod_alarm || curr->time_stamp > mod_alarm->time_stamp)
+                        mod_alarm = curr;
+                }
+                curr = curr->link;
+            }
+            /** If we have the mod alarm, we can continue with processing **/
+            if (mod_alarm) {
+                /** Print to the console **/
+                console_print("Alarm(%d) Cancelled and Removed at %ld: Group(%d) %ld %d %ld %s", mod_alarm->alarm_id, (long)curr_time, mod_alarm->group_id, (long)mod_alarm->time_stamp, mod_alarm->interval, (long)mod_alarm->time,  mod_alarm->message);
+
+                /** Remove the alarm that is to be modified **/
+                if (mod_alarm->prev)
+                    mod_alarm->prev->link = mod_alarm->link;
+                else
+                    alarm_list = mod_alarm->link;
+
+                if (mod_alarm->link)
+                    mod_alarm->link->prev = mod_alarm->prev;
+                free(mod_alarm);
+				mod_alarm = NULL;
+
+                /** Remove the req after cancellation **/
+                if (req->prev)
+                    req->prev->link = req->link;
+                else
+                    alarm_list = req->link;
+
+                if (req->link)
+                    req->link->prev = req->prev;
+                free(req);
+				/** This is how it actually gets removed **/
+				req = NULL;
+            } else {
+                /** We did not find a matching alarm, so we just remove **/
+                if (req->prev)
+                    req->prev->link = req->link;
+                else
+                    alarm_list = req->link;
+
+                if (req->link) 
+                    req->link->prev = req->prev;
+                free(req);
+				req = NULL;
+            }
+        }
+
+        /** Situation: expired alarms **/
+        curr = alarm_list;
+        while (curr) {
+            next = curr->link;
+            /** Check for expiration **/
+            if (curr->type == REQ_START_ALARM && (curr->expiry <= curr_time)) {
+                console_print("Alarm(%d) Expired and Removed at %ld: Group(%d) %ld %d %ld %s", curr->alarm_id, (long)curr_time, curr->group_id, (long)curr->time_stamp, curr->interval, (long)curr->time,  curr->message);
+                /** When an alarm is expired, it gets removed**/
+                if (curr->prev)
+                    curr->prev->link = curr->link;
+                else
+                    alarm_list = curr->link;
+
+                if (curr->link)
+                    curr->link->prev = curr->prev;
+                free(curr);
+				curr = NULL;
+            }
+            curr = next;
+        }
+        /** Unlock after we're done **/
+        writer_unlock();
+    }
     return NULL;
 }
 
