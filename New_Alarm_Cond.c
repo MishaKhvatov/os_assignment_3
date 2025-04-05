@@ -899,6 +899,12 @@ void* view_alarms_thread(void* arg) {
     // Print the header for view alarms
     console_print("View Alarms at View Time %ld:", (long)view_time);
 
+    // Wait for the consumer thread to signal the condition
+    pthread_mutex_lock(&alarm_mutex);
+    while (alarm_list == NULL) {
+        pthread_cond_wait(&view_alarm_cond, &alarm_mutex);  // Wait for signal
+    }
+
     current_alarm = alarm_list;
     while (current_alarm != NULL) {
         // Ensure only alarms that were inserted before the current View Alarms request are displayed
@@ -923,6 +929,8 @@ void* view_alarms_thread(void* arg) {
     // Print that View Alarms has finished processing
     console_print("View Alarms request processed and alarms listed.");
 
+    // Unlock the mutex
+    pthread_mutex_unlock(&alarm_mutex);
+
     return NULL;
 }
-//.
