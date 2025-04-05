@@ -779,9 +779,14 @@ void *change_alarm_thread(void *arg) {
             } else {
                 change_alarm->prev->link = change_alarm->link;
             }
+            if (link) {
+                link->prev = change_alarm->prev;
+            }
 
             change_alarm = link;
         }
+        free(change_alarm);
+        change_alarm = NULL;
 
         writer_unlock();
 
@@ -877,6 +882,7 @@ void *suspend_reactivate_alarm_thread(void *arg) {
                 if (req->link)
                     req->link->prev = req->prev;
                 free(req);
+                req = NULL;
             }
         }   
         writer_unlock(); 
