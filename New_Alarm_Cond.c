@@ -619,15 +619,24 @@ void *start_alarm_thread(void *arg) {
         while (find_alarm_by_type(alarm_list, REQ_START_ALARM) == NULL) {
             pthread_cond_wait(&start_alarm_cond, &alarm_mutex);
         }
-        pthread_mutex_unlock(&alarm_mutex);
         
         /* Find the most recent start alarm request */
-        writer_lock();
         alarm = find_most_recent_alarm_by_type(alarm_list, REQ_START_ALARM);
         if (alarm == NULL) {
-            writer_unlock();
+            pthread_mutex_unlock(&alarm_mutex);
             continue;
         }
+        
+        /* Remove the alarm from the list since we're processing it */
+        if (alarm->prev == NULL) {
+            alarm_list = alarm->link;
+        } else {
+            alarm->prev->link = alarm->link;
+        }
+        if (alarm->link != NULL) {
+            alarm->link->prev = alarm->prev;
+        }
+        pthread_mutex_unlock(&alarm_mutex);
         
         /* Check if we need to create a new display thread or assign to existing one */
         found = 0;
@@ -641,15 +650,17 @@ void *start_alarm_thread(void *arg) {
             if (dt->group_id == alarm->group_id) {
                 count++;
                 /* Check if this thread has less than 2 alarms assigned */
+                pthread_mutex_lock(&dt->mutex);
                 if (dt->alarm_count < 2) {
                     target_dt = dt;
                     found = 1;
-                    break;
                 }
+                pthread_mutex_unlock(&dt->mutex);
+                
+                if (found) break;
             }
             dt = dt->next;
         }
-        pthread_mutex_unlock(&display_mutex);
         
         current_time = time(NULL);
         
@@ -678,8 +689,7 @@ void *start_alarm_thread(void *arg) {
                           alarm->group_id, (long)alarm->time_stamp, alarm->interval,
                           (long)alarm->time, alarm->message);
         }
-        
-        writer_unlock();
+        pthread_mutex_unlock(&display_mutex);
     }
     
     return NULL;
